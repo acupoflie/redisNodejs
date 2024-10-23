@@ -1,0 +1,28 @@
+{
+  "name": "redisnodejs",
+  "version": "1.0.0",
+  "main": "app.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file .env index.ts",
+    "build": "tsc",
+    "start": "node --env-file .env dist/index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.7.7",
+    "cors": "^2.8.5",
+    "express": "^4.21.1",
+    "nanoid": "^5.0.7",
+    "redis": "^4.7.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.7.9",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
+}
