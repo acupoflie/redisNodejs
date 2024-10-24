@@ -9,7 +9,7 @@ export function successResponse(res: Response, data: any, message: string = 'suc
 }
 
 export function errorResponse(res: Response, status: number, error: string) {
-    return res.status(status).json({
+    res.status(status).json({
         success: false,
         error
     })
