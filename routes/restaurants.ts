@@ -2,13 +2,19 @@
 
 import express, { type Request } from "express";
 import { validate } from "../middlewares/validate.js";
-import { RestaurantSchema, type Restaurant } from "../schemas/restaurant";
+import {
+  RestaurantDetailsSchema,
+  RestaurantSchema,
+  type Restaurant,
+  type RestaurantDetails,
+} from "../schemas/restaurant";
 import { initializeRedisClient } from "../utils/client.js";
 import { nanoid } from "nanoid";
 import {
   cuisineKey,
   cuisinesKey,
   restaurantCuisineKeyById,
+  restaurantDetailsKeyById,
   restaurantKeyById,
   restaurantsByRatingKey,
   reviewDetailKeyById,
@@ -70,6 +76,43 @@ router.post("/", validate(RestaurantSchema), async (req, res, next) => {
   }
 });
 
+router.post(
+  "/:restaurantId/details",
+  checkRestaurantExists,
+  validate(RestaurantDetailsSchema),
+  async (req: Request<{ restaurantId: string }>, res, next) => {
+    const { restaurantId } = req.params;
+    const data = req.body as RestaurantDetails;
+
+    try {
+      const client = await initializeRedisClient();
+      const restaurantDetailsKey = restaurantDetailsKeyById(restaurantId);
+      await client.json.set(restaurantDetailsKey, ".", data);
+      return successResponse(res, {}, "Restaurant details added.");
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.get(
+  "/:restaurantId/details",
+  checkRestaurantExists,
+  async (req: Request<{ restaurantId: string }>, res, next) => {
+    const { restaurantId } = req.params;
+    const data = req.body as RestaurantDetails;
+
+    try {
+      const client = await initializeRedisClient();
+      const restaurantDetailsKey = restaurantDetailsKeyById(restaurantId);
+      const details = await client.json.get(restaurantDetailsKey);
+      return successResponse(res, details);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 router.get(
   "/:restaurantId/weather",
   checkRestaurantExists,
@@ -96,7 +139,7 @@ router.get(
       if (apiResponse.status === 200) {
         const json = await apiResponse.json();
         await client.set(weatherKey, JSON.stringify(json), {
-          EX: 3600
+          EX: 3600,
         });
         return successResponse(res, json);
       }
