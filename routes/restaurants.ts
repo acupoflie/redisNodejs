@@ -10,6 +10,7 @@ import {
   cuisinesKey,
   restaurantCuisineKeyById,
   restaurantKeyById,
+  restaurantsByRatingKey,
   reviewDetailKeyById,
   reviewKeyById,
 } from "../utils/keys.js";
@@ -19,6 +20,27 @@ import { ReviewSchema, type Review } from "../schemas/review.js";
 
 const router = express.Router();
 
+router.get("/", async (req, res, next) => {
+  const { page = 1, limit = 10 } = req.query;
+  const start = (Number(page) - 1) * Number(limit);
+  const end = start + Number(limit);
+
+  try {
+    const client = await initializeRedisClient();
+    const restaurantIds = await client.zRange(
+      restaurantsByRatingKey,
+      start,
+      end
+    );
+    const restaurants = await Promise.all(
+      restaurantIds.map((id) => client.hGetAll(restaurantKeyById(id)))
+    );
+    successResponse(res, restaurants);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/", validate(RestaurantSchema), async (req, res, next) => {
   const data = req.body as Restaurant;
   try {
@@ -27,12 +49,18 @@ router.post("/", validate(RestaurantSchema), async (req, res, next) => {
     const restaurantKey = restaurantKeyById(id);
     const hashData = { id, name: data.name, location: data.location };
     const addResult = await Promise.all([
-      ...data.cuisines.map(cuisine => Promise.all([
-        client.sAdd(cuisinesKey, cuisine),
-        client.sAdd(cuisineKey(cuisine), id),
-        client.sAdd(restaurantCuisineKeyById(id), cuisine)
-      ])),
-      client.hSet(restaurantKey, hashData)
+      ...data.cuisines.map((cuisine) =>
+        Promise.all([
+          client.sAdd(cuisinesKey, cuisine),
+          client.sAdd(cuisineKey(cuisine), id),
+          client.sAdd(restaurantCuisineKeyById(id), cuisine),
+        ])
+      ),
+      client.hSet(restaurantKey, hashData),
+      client.zAdd(restaurantsByRatingKey, {
+        score: 0,
+        value: id,
+      }),
     ]);
     console.log(`Added ${addResult} fields`);
     successResponse(res, hashData, "Added new restaurant.");
@@ -59,10 +87,25 @@ router.post(
         timestamp: Date.now(),
         restaurantId,
       };
-      await Promise.all([
+      const [reviewCount, setResult, totalStars] = await Promise.all([
         client.lPush(reviewKey, reviewId),
         client.hSet(reviewDetailKey, reviewData),
+        client.hIncrByFloat(
+          restaurantKeyById(restaurantId),
+          "totalStars",
+          data.rating
+        ),
       ]);
+
+      const averageRating = Number((totalStars / reviewCount).toFixed(1));
+      await Promise.all([
+        client.zAdd(restaurantsByRatingKey, {
+          score: averageRating,
+          value: restaurantKeyById(restaurantId),
+        }),
+        client.hSet(restaurantKeyById(restaurantId), "avgStars", averageRating),
+      ]);
+
       successResponse(res, reviewData, "Review added.");
     } catch (err) {
       next(err);
@@ -101,22 +144,22 @@ router.delete(
     res,
     next
   ) => {
-    const { restaurantId, reviewId } = req.params
+    const { restaurantId, reviewId } = req.params;
 
     try {
-      const client = await initializeRedisClient()
-      const reviewKey = reviewKeyById(restaurantId)
-      const reviewDetailsKey = reviewDetailKeyById(reviewId)
+      const client = await initializeRedisClient();
+      const reviewKey = reviewKeyById(restaurantId);
+      const reviewDetailsKey = reviewDetailKeyById(reviewId);
       const [removeResult, deleteResult] = await Promise.all([
         client.lRem(reviewKey, 0, reviewId),
-        client.del(reviewDetailsKey)
-      ])
-      if(removeResult === 0 && deleteResult === 0) {
-        errorResponse(res, 404, 'Review not found')
+        client.del(reviewDetailsKey),
+      ]);
+      if (removeResult === 0 && deleteResult === 0) {
+        errorResponse(res, 404, "Review not found");
       }
-      successResponse(res, reviewId, 'Review deleted.')
-    } catch(err) {
-      next(err)
+      successResponse(res, reviewId, "Review deleted.");
+    } catch (err) {
+      next(err);
     }
   }
 );
@@ -132,9 +175,9 @@ router.get(
       const [viewCount, restaurant, cuisines] = await Promise.all([
         client.hIncrBy(restaurantKey, "viewCount", 1),
         client.hGetAll(restaurantKey),
-        client.sMembers(restaurantCuisineKeyById(restaurantId))
+        client.sMembers(restaurantCuisineKeyById(restaurantId)),
       ]);
-      successResponse(res, {...restaurant, cuisines});
+      successResponse(res, { ...restaurant, cuisines });
     } catch (err) {
       next(err);
     }
