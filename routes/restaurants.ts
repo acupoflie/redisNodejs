@@ -13,6 +13,7 @@ import {
   restaurantsByRatingKey,
   reviewDetailKeyById,
   reviewKeyById,
+  weatherKeyById,
 } from "../utils/keys.js";
 import { errorResponse, successResponse } from "../utils/responses.js";
 import { checkRestaurantExists } from "../middlewares/checkRestaurantId.js";
@@ -35,7 +36,7 @@ router.get("/", async (req, res, next) => {
     const restaurants = await Promise.all(
       restaurantIds.map((id) => client.hGetAll(restaurantKeyById(id)))
     );
-    successResponse(res, restaurants);
+    return successResponse(res, restaurants);
   } catch (err) {
     next(err);
   }
@@ -63,12 +64,50 @@ router.post("/", validate(RestaurantSchema), async (req, res, next) => {
       }),
     ]);
     console.log(`Added ${addResult} fields`);
-    successResponse(res, hashData, "Added new restaurant.");
+    return successResponse(res, hashData, "Added new restaurant.");
   } catch (err) {
     next(err);
   }
 });
 
+router.get(
+  "/:restaurantId/weather",
+  checkRestaurantExists,
+  async (req: Request<{ restaurantId: string }>, res, next) => {
+    const { restaurantId } = req.params;
+
+    try {
+      const client = await initializeRedisClient();
+      const weatherKey = weatherKeyById(restaurantId);
+      const cachedWeather = await client.get(weatherKey);
+      if (cachedWeather) {
+        console.log("Cache hit");
+        return successResponse(res, JSON.parse(cachedWeather));
+      }
+      const restaurantKey = restaurantKeyById(restaurantId);
+      const coords = await client.hGet(restaurantKey, "location");
+      if (!coords) {
+        return errorResponse(res, 404, "Location not found");
+      }
+      const [lon, lat] = coords.split(",");
+      const apiResponse = await fetch(
+        `https://api.openweathermap.org/data/2.5/weather?units=imperial&lat=${lat}&lon=${lon}&appid=${process.env.WEATHER_API_KEY}`
+      );
+      if (apiResponse.status === 200) {
+        const json = await apiResponse.json();
+        await client.set(weatherKey, JSON.stringify(json), {
+          EX: 3600
+        });
+        return successResponse(res, json);
+      }
+      return errorResponse(res, 500, "Couldnt fetch weather api");
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// /:restaurantId/reviews
 router.post(
   "/:restaurantId/reviews",
   checkRestaurantExists,
@@ -106,13 +145,14 @@ router.post(
         client.hSet(restaurantKeyById(restaurantId), "avgStars", averageRating),
       ]);
 
-      successResponse(res, reviewData, "Review added.");
+      return successResponse(res, reviewData, "Review added.");
     } catch (err) {
       next(err);
     }
   }
 );
 
+// /:restaurantId/reviews
 router.get(
   "/:restaurantId/reviews",
   checkRestaurantExists,
@@ -129,13 +169,14 @@ router.get(
       const reviews = await Promise.all(
         reviewIds.map((id) => client.hGetAll(reviewDetailKeyById(id)))
       );
-      successResponse(res, reviews);
+      return successResponse(res, reviews);
     } catch (err) {
       next(err);
     }
   }
 );
 
+// /:restaurantId/reviews/:reviewId
 router.delete(
   "/:restaurantId/reviews/:reviewId",
   checkRestaurantExists,
@@ -155,15 +196,16 @@ router.delete(
         client.del(reviewDetailsKey),
       ]);
       if (removeResult === 0 && deleteResult === 0) {
-        errorResponse(res, 404, "Review not found");
+        return errorResponse(res, 404, "Review not found");
       }
-      successResponse(res, reviewId, "Review deleted.");
+      return successResponse(res, reviewId, "Review deleted.");
     } catch (err) {
       next(err);
     }
   }
 );
 
+// /:restaurantId
 router.get(
   "/:restaurantId",
   checkRestaurantExists,
@@ -177,7 +219,7 @@ router.get(
         client.hGetAll(restaurantKey),
         client.sMembers(restaurantCuisineKeyById(restaurantId)),
       ]);
-      successResponse(res, { ...restaurant, cuisines });
+      return successResponse(res, { ...restaurant, cuisines });
     } catch (err) {
       next(err);
     }

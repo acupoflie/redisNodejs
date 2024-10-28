@@ -1,7 +1,7 @@
 import type { Response } from 'express'
 
 export function successResponse(res: Response, data: any, message: string = 'success') {
-    return res.status(200).json({
+    res.status(200).json({
         success: true,
         message, 
         data
