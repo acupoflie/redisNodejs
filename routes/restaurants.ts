@@ -7,7 +7,7 @@ import {
   RestaurantSchema,
   type Restaurant,
   type RestaurantDetails,
-} from "../schemas/restaurant";
+} from "../schemas/restaurant.js"
 import { initializeRedisClient } from "../utils/client.js";
 import { nanoid } from "nanoid";
 import {

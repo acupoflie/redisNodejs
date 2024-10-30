@@ -1,6 +1,6 @@
 import { SchemaFieldTypes } from "redis";
-import { initializeRedisClient } from "../utils/client";
-import { getKeyName, indexKey } from "../utils/keys";
+import { initializeRedisClient } from "../utils/client.js";
+import { getKeyName, indexKey } from "../utils/keys.js";
 
 async function createIndex() {
     const client = await initializeRedisClient()
